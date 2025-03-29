@@ -8,11 +8,11 @@ from .managers import CustomUserManager
 
 class Object(models.Model):
     name = models.CharField(max_length=255)
-    total_apartments = models.PositiveIntegerField()  # Manfiy bo‘lmasligi uchun
+    total_apartments = models.PositiveIntegerField()
     floors = models.PositiveIntegerField()
     address = models.TextField()
-    description = models.TextField(blank=True)  # Majburiy emas
-    image = models.ImageField(upload_to='objects/', blank=True, null=True)  # Rasm majburiy emas
+    description = models.TextField(blank=True)
+    image = models.ImageField(upload_to='objects/', blank=True, null=True)
 
     def __str__(self):
         return self.name
@@ -30,11 +30,11 @@ class Apartment(models.Model):
     )
 
     object = models.ForeignKey(Object, on_delete=models.CASCADE, related_name='apartments')
-    room_number = models.PositiveIntegerField()  # Xona raqami
-    rooms = models.PositiveIntegerField()  # Xonalar soni
-    area = models.FloatField()  # Maydon
-    floor = models.PositiveIntegerField()  # Qavat
-    price = models.DecimalField(max_digits=12, decimal_places=2)  # Narx uchun katta maydon
+    room_number = models.PositiveIntegerField()
+    rooms = models.PositiveIntegerField()
+    area = models.FloatField()
+    floor = models.PositiveIntegerField()
+    price = models.DecimalField(max_digits=12, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='bosh')
     description = models.TextField(blank=True)
     secret_code = models.CharField(max_length=8, unique=True, editable=False)
@@ -109,3 +109,59 @@ class User(AbstractUser):
     class Meta:
         verbose_name = "Foydalanuvchi"
         verbose_name_plural = "Foydalanuvchilar"
+
+
+class ExpenseType(models.Model):
+    name = models.CharField(max_length=50)
+
+    def __str__(self):
+        return self.name
+
+    class Meta:
+        verbose_name = "Xarajat turi"
+        verbose_name_plural = "Xarajat turlari"
+
+
+class Supplier(models.Model):
+    company_name = models.CharField(max_length=255)
+    contact_person_name = models.CharField(max_length=255)
+    phone_number = models.CharField(max_length=15, unique=True)
+    email = models.EmailField(unique=True)
+    address = models.TextField()
+    description = models.TextField(blank=True)
+    balance = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+
+    def __str__(self):
+        return self.company_name
+
+    class Meta:
+        verbose_name = "Yetkazib beruvchi"
+        verbose_name_plural = "Yetkazib beruvchilar"
+
+
+class Expense(models.Model):
+    STATUS_CHOICES = (
+        ('To‘langan', 'To‘langan'),
+        ('Kutilmoqda', 'Kutilmoqda'),
+    )
+
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    date = models.DateField()
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name='expenses')
+    comment = models.TextField()
+    expense_type = models.ForeignKey(ExpenseType, on_delete=models.CASCADE, related_name='expenses')
+    object = models.ForeignKey(Object, on_delete=models.CASCADE, related_name='expenses')
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Kutilmoqda')
+
+    def save(self, *args, **kwargs):
+        if self.pk is None:  # Agar yangi obyekt bo‘lsa
+            self.supplier.balance += self.amount
+            self.supplier.save()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.supplier.company_name} - {self.amount}"
+
+    class Meta:
+        verbose_name = "Xarajat"
+        verbose_name_plural = "Xarajatlar"

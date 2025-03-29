@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Object, Apartment, User
+from .models import Object, Apartment, User, ExpenseType, Supplier, Expense
 
 
 class ObjectSerializer(serializers.ModelSerializer):
@@ -44,3 +44,27 @@ class UserSerializer(serializers.ModelSerializer):
                 setattr(instance, attr, value)
         instance.save()
         return instance
+
+
+class ExpenseTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExpenseType
+        fields = '__all__'
+
+
+class SupplierSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Supplier
+        fields = '__all__'
+
+
+class ExpenseSerializer(serializers.ModelSerializer):
+    supplier_name = serializers.CharField(source='supplier.company_name', read_only=True)
+    expense_type_name = serializers.CharField(source='expense_type.name', read_only=True)
+
+    class Meta:
+        model = Expense
+        fields = [
+            'id', 'amount', 'date', 'supplier', 'supplier_name', 'comment', 'expense_type',
+            'expense_type_name', 'object', 'status'
+        ]
