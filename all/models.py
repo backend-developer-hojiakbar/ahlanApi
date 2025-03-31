@@ -5,7 +5,7 @@ from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.hashers import make_password
 from .managers import CustomUserManager
 from decimal import Decimal
-
+from datetime import datetime, timedelta
 
 class Object(models.Model):
     name = models.CharField(max_length=255)
@@ -177,6 +177,11 @@ class Payment(models.Model):
         ('muddatli', 'Muddatli to‘lov'),
         ('ipoteka', 'Ipoteka'),
     )
+    PAYMENT_STATUS = (
+        ('pending', 'Kutilmoqda'),
+        ('paid', 'To‘langan'),
+        ('overdue', 'Muddati o‘tgan'),
+    )
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payments')
     apartment = models.ForeignKey(Apartment, on_delete=models.CASCADE, related_name='payments')
@@ -186,6 +191,9 @@ class Payment(models.Model):
     interest_rate = models.FloatField(default=0.0, blank=True)  # Foiz (yillik)
     duration_months = models.PositiveIntegerField(default=0, blank=True)  # Muddat (oylarda)
     monthly_payment = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)  # Har oylik to‘lov
+    due_date = models.PositiveIntegerField(default=1, help_text="Har oy qaysi kunda to‘lov bo‘lishi kerak (1-31)")  # To‘lov sanasi
+    paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)  # To‘langan suma
+    status = models.CharField(max_length=20, choices=PAYMENT_STATUS, default='pending')
     additional_info = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -200,15 +208,28 @@ class Payment(models.Model):
         else:  # Ipoteka uchun soddalashtirilgan hisob
             self.monthly_payment = (self.total_amount - self.initial_payment) / Decimal(str(self.duration_months))
 
+    def update_status(self):
+        today = datetime.now().date()
+        if self.paid_amount >= self.total_amount:
+            self.status = 'paid'
+            self.apartment.status = 'sotilgan'
+        elif self.payment_type in ['muddatli', 'ipoteka'] and today.day > self.due_date:
+            self.status = 'overdue'
+        else:
+            self.status = 'pending'
+            self.apartment.status = 'band'
+        self.apartment.save()
+
     def save(self, *args, **kwargs):
         self.total_amount = self.apartment.price
         self.calculate_monthly_payment()
         super().save(*args, **kwargs)
-        if self.payment_type == 'muddatli' and self.duration_months > 0:
+        if self.payment_type in ['muddatli', 'ipoteka'] and self.duration_months > 0:
             remaining_amount = self.total_amount - self.initial_payment
             interest = remaining_amount * (Decimal(str(self.interest_rate)) / Decimal('100'))
             total_with_interest = remaining_amount + interest
             self.user.add_balance(-total_with_interest)  # Qarzni minusda qo‘shish
+        self.update_status()
 
     def __str__(self):
         return f"{self.user.fio} - {self.apartment} - {self.payment_type}"
@@ -216,3 +237,17 @@ class Payment(models.Model):
     class Meta:
         verbose_name = "To‘lov"
         verbose_name_plural = "To‘lovlar"
+
+
+class Document(models.Model):
+    payment = models.ForeignKey(Payment, on_delete=models.CASCADE, related_name='documents')
+    docx_file = models.FileField(upload_to='contracts/docx/', null=True, blank=True)
+    pdf_file = models.FileField(upload_to='contracts/pdf/', null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Shartnoma № {self.payment.id} - {self.payment.user.fio}"
+
+    class Meta:
+        verbose_name = "Hujjat"
+        verbose_name_plural = "Hujjatlar"

@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment
+from django.utils import timezone
+from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document
 
 
 @admin.register(Object)
@@ -50,6 +51,30 @@ class ExpenseAdmin(admin.ModelAdmin):
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ('user', 'apartment', 'payment_type', 'total_amount', 'monthly_payment', 'created_at')
-    list_filter = ('payment_type', 'created_at')
+    list_display = ('user', 'apartment', 'payment_type', 'total_amount', 'monthly_payment', 'due_date', 'paid_amount', 'status', 'created_at')
+    list_filter = ('payment_type', 'status', 'created_at')
     search_fields = ('user__fio', 'apartment__room_number')
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        today = timezone.now().day
+        overdue = qs.filter(due_date__lt=today, status='pending')
+        for payment in overdue:
+            payment.status = 'overdue'
+            payment.save()
+        return qs
+
+    def changelist_view(self, request, extra_context=None):
+        today = timezone.now().day
+        due_payments = Payment.objects.filter(due_date=today, status='pending')
+        if due_payments.exists():
+            extra_context = extra_context or {}
+            extra_context['payment_reminder'] = f"Bugun ({today}-kun) {due_payments.count()} ta to‘lov muddati yetdi!"
+        return super().changelist_view(request, extra_context=extra_context)
+
+
+@admin.register(Document)
+class DocumentAdmin(admin.ModelAdmin):
+    list_display = ('payment', 'created_at')
+    list_filter = ('created_at',)
+    search_fields = ('payment__user__fio',)

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment
+from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document
 
 
 class ObjectSerializer(serializers.ModelSerializer):
@@ -70,14 +70,21 @@ class ExpenseSerializer(serializers.ModelSerializer):
         ]
 
 
+class DocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Document
+        fields = ['id', 'payment', 'docx_file', 'pdf_file', 'created_at']
+
+
 class PaymentSerializer(serializers.ModelSerializer):
     user_fio = serializers.CharField(source='user.fio', read_only=True)
     apartment_info = serializers.CharField(source='apartment.__str__', read_only=True)
+    documents = DocumentSerializer(many=True, read_only=True)
 
     class Meta:
         model = Payment
         fields = [
             'id', 'user', 'user_fio', 'apartment', 'apartment_info', 'payment_type', 'total_amount',
-            'initial_payment', 'interest_rate', 'duration_months', 'monthly_payment',
-            'additional_info', 'created_at'
+            'initial_payment', 'interest_rate', 'duration_months', 'monthly_payment', 'due_date',
+            'paid_amount', 'status', 'additional_info', 'created_at', 'documents'
         ]

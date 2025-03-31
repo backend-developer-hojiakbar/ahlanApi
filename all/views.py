@@ -1,9 +1,9 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment
+from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document
 from .serializers import (ObjectSerializer, ApartmentSerializer, UserSerializer,
-                         ExpenseTypeSerializer, SupplierSerializer, ExpenseSerializer, PaymentSerializer)
+                          ExpenseTypeSerializer, SupplierSerializer, ExpenseSerializer, PaymentSerializer)
 from .pagination import CustomPagination
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -12,6 +12,8 @@ from docx import Document
 from docx2pdf import convert
 import os
 from django.conf import settings
+from django.db.models import Sum, Count, Avg
+from datetime import datetime
 
 
 class ObjectViewSet(viewsets.ModelViewSet):
@@ -107,7 +109,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentSerializer
     pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['user', 'apartment', 'payment_type', 'created_at']
+    filterset_fields = ['user', 'apartment', 'payment_type', 'created_at', 'status']
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
@@ -159,12 +161,65 @@ class PaymentViewSet(viewsets.ModelViewSet):
             )
 
         # Faylni saqlash
-        file_path = os.path.join(settings.MEDIA_ROOT, f"contract_{payment.id}.docx")
-        doc.save(file_path)
-        pdf_path = os.path.join(settings.MEDIA_ROOT, f"contract_{payment.id}.pdf")
-        convert(file_path, pdf_path)
+        docx_path = os.path.join(settings.MEDIA_ROOT, f"contracts/docx/contract_{payment.id}.docx")
+        pdf_path = os.path.join(settings.MEDIA_ROOT, f"contracts/pdf/contract_{payment.id}.pdf")
+        os.makedirs(os.path.dirname(docx_path), exist_ok=True)
+        doc.save(docx_path)
+        convert(docx_path, pdf_path)
+
+        # Document modelida saqlash
+        Document.objects.create(
+            payment=payment,
+            docx_file=f"contracts/docx/contract_{payment.id}.docx",
+            pdf_file=f"contracts/pdf/contract_{payment.id}.pdf"
+        )
 
         return FileResponse(open(pdf_path, 'rb'), as_attachment=True, filename=f"contract_{payment.id}.pdf")
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def statistics(self, request):
+        today = datetime.now().date()
+
+        # Umumiy statistika
+        total_sales = Payment.objects.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+        sold_apartments = Apartment.objects.filter(status='sotilgan').count()
+        clients = User.objects.filter(user_type='mijoz').count()
+        total_objects = Object.objects.count()
+        total_apartments = Apartment.objects.count()
+        free_apartments = Apartment.objects.filter(status='bosh').count()
+        reserved_apartments = Apartment.objects.filter(status='band').count()
+        average_price = Apartment.objects.aggregate(avg=Avg('price'))['avg'] or Decimal('0')
+        total_payments = Payment.objects.aggregate(total=Sum('monthly_payment'))['total'] or Decimal('0')
+        paid_payments = Payment.objects.filter(status='paid').aggregate(total=Sum('paid_amount'))['total'] or Decimal(
+            '0')
+        pending_payments = Payment.objects.filter(status='pending').aggregate(total=Sum('monthly_payment'))[
+                               'total'] or Decimal('0')
+        overdue_payments = Payment.objects.filter(status='overdue').aggregate(total=Sum('monthly_payment'))[
+                               'total'] or Decimal('0')
+        payments_due_today = \
+        Payment.objects.filter(due_date=today.day, status='pending').aggregate(total=Sum('monthly_payment'))[
+            'total'] or Decimal('0')
+        payments_paid_today = \
+        Payment.objects.filter(status='paid', created_at__date=today).aggregate(total=Sum('paid_amount'))[
+            'total'] or Decimal('0')
+
+        data = {
+            'total_sales': total_sales,  # Jami sotuvlar (summa)
+            'sold_apartments': sold_apartments,  # Sotilgan xonadonlar (soni)
+            'clients': clients,  # Mijozlar (soni)
+            'total_objects': total_objects,  # Jami obyektlar
+            'total_apartments': total_apartments,  # Jami xonadonlar
+            'free_apartments': free_apartments,  # Bo‘sh xonadonlar
+            'reserved_apartments': reserved_apartments,  # Band qilingan xonadonlar
+            'average_price': average_price,  # O‘rtacha narx
+            'total_payments': total_payments,  # Jami to‘lovlar (har oylik)
+            'paid_payments': paid_payments,  # To‘langan to‘lovlar (jami)
+            'pending_payments': pending_payments,  # Kutilayotgan to‘lovlar
+            'overdue_payments': overdue_payments,  # Muddati o‘tgan to‘lovlar
+            'payments_due_today': payments_due_today,  # Bugun to‘lov qilinishi kerak
+            'payments_paid_today': payments_paid_today,  # Bugun to‘langan
+        }
+        return Response(data)
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
