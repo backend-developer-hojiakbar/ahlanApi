@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Object, Apartment, User, ExpenseType, Supplier, Expense
+from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment
 
 
 @admin.register(Object)
@@ -46,3 +46,10 @@ class ExpenseAdmin(admin.ModelAdmin):
     list_display = ('supplier', 'amount', 'date', 'expense_type', 'status')
     list_filter = ('status', 'expense_type', 'object', 'date')
     search_fields = ('supplier__company_name', 'comment')
+
+
+@admin.register(Payment)
+class PaymentAdmin(admin.ModelAdmin):
+    list_display = ('user', 'apartment', 'payment_type', 'total_amount', 'monthly_payment', 'created_at')
+    list_filter = ('payment_type', 'created_at')
+    search_fields = ('user__fio', 'apartment__room_number')

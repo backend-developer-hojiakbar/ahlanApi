@@ -33,6 +33,7 @@ router.register(r'users', UserViewSet)
 router.register(r'expense-types', ExpenseTypeViewSet)
 router.register(r'suppliers', SupplierViewSet)
 router.register(r'expenses', ExpenseViewSet)
+router.register(r'payments', PaymentViewSet)
 
 urlpatterns = [
     path('', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),

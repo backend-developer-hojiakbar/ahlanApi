@@ -4,6 +4,7 @@ import string
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.hashers import make_password
 from .managers import CustomUserManager
+from decimal import Decimal
 
 
 class Object(models.Model):
@@ -90,9 +91,12 @@ class User(AbstractUser):
         super().save(*args, **kwargs)
 
     def add_balance(self, amount):
-        if amount < 0:
-            raise ValueError("Qo‘shiladigan summa manfiy bo‘lishi mumkin emas!")
-        self.balance += amount
+        if amount < 0 and self.balance + amount < 0 and self.balance == 0:
+            self.balance += amount  # Agar balans 0 bo‘lsa, minusga tushishga ruxsat beramiz
+        elif amount >= 0 or (amount < 0 and self.balance + amount >= 0):
+            self.balance += amount
+        else:
+            raise ValueError("Balans yetarli emas yoki minusga tushish mumkin emas!")
         self.save()
 
     def deduct_balance(self, amount):
@@ -154,7 +158,7 @@ class Expense(models.Model):
     status = models.CharField(max_length=50, choices=STATUS_CHOICES, default='Kutilmoqda')
 
     def save(self, *args, **kwargs):
-        if self.pk is None:  # Agar yangi obyekt bo‘lsa
+        if self.pk is None:
             self.supplier.balance += self.amount
             self.supplier.save()
         super().save(*args, **kwargs)
@@ -165,3 +169,50 @@ class Expense(models.Model):
     class Meta:
         verbose_name = "Xarajat"
         verbose_name_plural = "Xarajatlar"
+
+
+class Payment(models.Model):
+    PAYMENT_TYPES = (
+        ('naqd', 'Naqd pul'),
+        ('muddatli', 'Muddatli to‘lov'),
+        ('ipoteka', 'Ipoteka'),
+    )
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payments')
+    apartment = models.ForeignKey(Apartment, on_delete=models.CASCADE, related_name='payments')
+    payment_type = models.CharField(max_length=20, choices=PAYMENT_TYPES, default='naqd')
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2)  # Umumiy narx
+    initial_payment = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, blank=True)  # Boshlang‘ich to‘lov
+    interest_rate = models.FloatField(default=0.0, blank=True)  # Foiz (yillik)
+    duration_months = models.PositiveIntegerField(default=0, blank=True)  # Muddat (oylarda)
+    monthly_payment = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)  # Har oylik to‘lov
+    additional_info = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def calculate_monthly_payment(self):
+        if self.payment_type == 'muddatli' and self.duration_months > 0:
+            remaining_amount = self.total_amount - self.initial_payment
+            interest = remaining_amount * (Decimal(str(self.interest_rate)) / Decimal('100'))
+            total_with_interest = remaining_amount + interest
+            self.monthly_payment = total_with_interest / Decimal(str(self.duration_months))
+        elif self.payment_type == 'naqd':
+            self.monthly_payment = Decimal('0')
+        else:  # Ipoteka uchun soddalashtirilgan hisob
+            self.monthly_payment = (self.total_amount - self.initial_payment) / Decimal(str(self.duration_months))
+
+    def save(self, *args, **kwargs):
+        self.total_amount = self.apartment.price
+        self.calculate_monthly_payment()
+        super().save(*args, **kwargs)
+        if self.payment_type == 'muddatli' and self.duration_months > 0:
+            remaining_amount = self.total_amount - self.initial_payment
+            interest = remaining_amount * (Decimal(str(self.interest_rate)) / Decimal('100'))
+            total_with_interest = remaining_amount + interest
+            self.user.add_balance(-total_with_interest)  # Qarzni minusda qo‘shish
+
+    def __str__(self):
+        return f"{self.user.fio} - {self.apartment} - {self.payment_type}"
+
+    class Meta:
+        verbose_name = "To‘lov"
+        verbose_name_plural = "To‘lovlar"
