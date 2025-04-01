@@ -1,12 +1,10 @@
 from rest_framework import serializers
-from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document
-
+from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document, UserPayment
 
 class ObjectSerializer(serializers.ModelSerializer):
     class Meta:
         model = Object
         fields = '__all__'
-
 
 class ApartmentSerializer(serializers.ModelSerializer):
     object_name = serializers.CharField(source='object.name', read_only=True)
@@ -17,7 +15,6 @@ class ApartmentSerializer(serializers.ModelSerializer):
             'id', 'object', 'object_name', 'room_number', 'rooms', 'area', 'floor',
             'price', 'status', 'description', 'secret_code'
         ]
-
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -45,18 +42,15 @@ class UserSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
-
 class ExpenseTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExpenseType
         fields = '__all__'
 
-
 class SupplierSerializer(serializers.ModelSerializer):
     class Meta:
         model = Supplier
         fields = '__all__'
-
 
 class ExpenseSerializer(serializers.ModelSerializer):
     supplier_name = serializers.CharField(source='supplier.company_name', read_only=True)
@@ -69,12 +63,10 @@ class ExpenseSerializer(serializers.ModelSerializer):
             'expense_type_name', 'object', 'status'
         ]
 
-
 class DocumentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Document
         fields = ['id', 'payment', 'docx_file', 'pdf_file', 'created_at']
-
 
 class PaymentSerializer(serializers.ModelSerializer):
     user_fio = serializers.CharField(source='user.fio', read_only=True)
@@ -88,3 +80,10 @@ class PaymentSerializer(serializers.ModelSerializer):
             'initial_payment', 'interest_rate', 'duration_months', 'monthly_payment', 'due_date',
             'paid_amount', 'status', 'additional_info', 'created_at', 'documents'
         ]
+
+class UserPaymentSerializer(serializers.ModelSerializer):
+    user_fio = serializers.CharField(source='user.fio', read_only=True)
+
+    class Meta:
+        model = UserPayment
+        fields = ['id', 'user', 'user_fio', 'amount', 'payment_type', 'date', 'description']

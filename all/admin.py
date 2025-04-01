@@ -1,7 +1,6 @@
 from django.contrib import admin
 from django.utils import timezone
-from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document
-
+from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document, UserPayment
 
 @admin.register(Object)
 class ObjectAdmin(admin.ModelAdmin):
@@ -9,13 +8,11 @@ class ObjectAdmin(admin.ModelAdmin):
     search_fields = ('name', 'address')
     list_filter = ('floors', 'total_apartments')
 
-
 @admin.register(Apartment)
 class ApartmentAdmin(admin.ModelAdmin):
     list_display = ('object', 'room_number', 'rooms', 'floor', 'price', 'status')
     list_filter = ('status', 'object', 'rooms', 'floor')
     search_fields = ('object__name', 'room_number')
-
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
@@ -28,12 +25,10 @@ class UserAdmin(admin.ModelAdmin):
         ('Kafil', {'fields': ('kafil_fio', 'kafil_address', 'kafil_phone_number')}),
     )
 
-
 @admin.register(ExpenseType)
 class ExpenseTypeAdmin(admin.ModelAdmin):
     list_display = ('name',)
     search_fields = ('name',)
-
 
 @admin.register(Supplier)
 class SupplierAdmin(admin.ModelAdmin):
@@ -41,13 +36,11 @@ class SupplierAdmin(admin.ModelAdmin):
     list_filter = ('balance',)
     search_fields = ('company_name', 'phone_number', 'email')
 
-
 @admin.register(Expense)
 class ExpenseAdmin(admin.ModelAdmin):
     list_display = ('supplier', 'amount', 'date', 'expense_type', 'status')
     list_filter = ('status', 'expense_type', 'object', 'date')
     search_fields = ('supplier__company_name', 'comment')
-
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
@@ -72,9 +65,14 @@ class PaymentAdmin(admin.ModelAdmin):
             extra_context['payment_reminder'] = f"Bugun ({today}-kun) {due_payments.count()} ta to‘lov muddati yetdi!"
         return super().changelist_view(request, extra_context=extra_context)
 
-
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
     list_display = ('payment', 'created_at')
     list_filter = ('created_at',)
     search_fields = ('payment__user__fio',)
+
+@admin.register(UserPayment)
+class UserPaymentAdmin(admin.ModelAdmin):
+    list_display = ('user', 'amount', 'payment_type', 'date', 'description')
+    list_filter = ('payment_type', 'date')
+    search_fields = ('user__fio', 'description')

@@ -1,20 +1,19 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document
+from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document, UserPayment
 from .serializers import (ObjectSerializer, ApartmentSerializer, UserSerializer,
-                          ExpenseTypeSerializer, SupplierSerializer, ExpenseSerializer, PaymentSerializer)
+                         ExpenseTypeSerializer, SupplierSerializer, ExpenseSerializer,
+                         PaymentSerializer, UserPaymentSerializer)
 from .pagination import CustomPagination
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.http import FileResponse
 from docx import Document
-from docx2pdf import convert
 import os
 from django.conf import settings
 from django.db.models import Sum, Count, Avg
 from datetime import datetime
-
 
 class ObjectViewSet(viewsets.ModelViewSet):
     queryset = Object.objects.all()
@@ -28,7 +27,6 @@ class ObjectViewSet(viewsets.ModelViewSet):
             return [permissions.IsAdminUser()]
         return [permissions.IsAuthenticated()]
 
-
 class ApartmentViewSet(viewsets.ModelViewSet):
     queryset = Apartment.objects.all()
     serializer_class = ApartmentSerializer
@@ -40,7 +38,6 @@ class ApartmentViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [permissions.IsAdminUser()]
         return [permissions.IsAuthenticated()]
-
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -64,7 +61,6 @@ class UserViewSet(viewsets.ModelViewSet):
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-
 class ExpenseTypeViewSet(viewsets.ModelViewSet):
     queryset = ExpenseType.objects.all()
     serializer_class = ExpenseTypeSerializer
@@ -76,7 +72,6 @@ class ExpenseTypeViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [permissions.IsAdminUser()]
         return [permissions.IsAuthenticated()]
-
 
 class SupplierViewSet(viewsets.ModelViewSet):
     queryset = Supplier.objects.all()
@@ -90,7 +85,6 @@ class SupplierViewSet(viewsets.ModelViewSet):
             return [permissions.IsAdminUser()]
         return [permissions.IsAuthenticated()]
 
-
 class ExpenseViewSet(viewsets.ModelViewSet):
     queryset = Expense.objects.all()
     serializer_class = ExpenseSerializer
@@ -102,7 +96,6 @@ class ExpenseViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [permissions.IsAdminUser()]
         return [permissions.IsAuthenticated()]
-
 
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.all()
@@ -123,7 +116,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
         apartment = payment.apartment
         obj = apartment.object
 
-        # Shartnoma shabloni
         doc = Document()
         doc.add_heading(f"ДАСТЛАБКИ ШАРТНОМА № {payment.id}", 0)
         doc.add_paragraph("Куп хонадонли турар-жой биноси куриш ва сотиш тугрисида")
@@ -144,7 +136,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         doc.add_heading("МУҲИМ ШАРТЛАР.", level=1)
         doc.add_paragraph(
             f"а) «Буюртмачи»га топшириладиган уйнинг {apartment.room_number}-хонадон ({apartment.rooms}-хонали умумий фойдаланиш майдони {apartment.area} кв м) "
-            f"умумий қийматининг бошланғич нархи {payment.total_amount} сўмни ташкил этади ва ушбу нарх томонлар томонидан келишилган ҳолда ўзгариши мумкин;"
+            f"умумий қийматининг бошланғич нархи {payment.total_amount} сўмни ташкил этади ва ушbu нарх томонлар томонидан келишилган ҳолда ўзгариши мумкин;"
         )
         doc.add_paragraph(
             f"б) Бажарувчи «тайёр ҳолда топшириш» шартларида турар-жой биносини қуришга бажарувчи вазифасини бажариш мажбуриятини ўз зиммасига олади..."
@@ -160,27 +152,21 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 f"Бошланғич тўлов: {payment.initial_payment} сўм, Фоиз: {payment.interest_rate}%, Ҳар ойлик тўлов: {payment.monthly_payment} сўм."
             )
 
-        # Faylni saqlash
         docx_path = os.path.join(settings.MEDIA_ROOT, f"contracts/docx/contract_{payment.id}.docx")
-        pdf_path = os.path.join(settings.MEDIA_ROOT, f"contracts/pdf/contract_{payment.id}.pdf")
         os.makedirs(os.path.dirname(docx_path), exist_ok=True)
         doc.save(docx_path)
-        convert(docx_path, pdf_path)
 
-        # Document modelida saqlash
         Document.objects.create(
             payment=payment,
             docx_file=f"contracts/docx/contract_{payment.id}.docx",
-            pdf_file=f"contracts/pdf/contract_{payment.id}.pdf"
+            pdf_file=None
         )
 
-        return FileResponse(open(pdf_path, 'rb'), as_attachment=True, filename=f"contract_{payment.id}.pdf")
+        return FileResponse(open(docx_path, 'rb'), as_attachment=True, filename=f"contract_{payment.id}.docx")
 
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def statistics(self, request):
         today = datetime.now().date()
-
-        # Umumiy statistika
         total_sales = Payment.objects.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
         sold_apartments = Apartment.objects.filter(status='sotilgan').count()
         clients = User.objects.filter(user_type='mijoz').count()
@@ -190,37 +176,41 @@ class PaymentViewSet(viewsets.ModelViewSet):
         reserved_apartments = Apartment.objects.filter(status='band').count()
         average_price = Apartment.objects.aggregate(avg=Avg('price'))['avg'] or Decimal('0')
         total_payments = Payment.objects.aggregate(total=Sum('monthly_payment'))['total'] or Decimal('0')
-        paid_payments = Payment.objects.filter(status='paid').aggregate(total=Sum('paid_amount'))['total'] or Decimal(
-            '0')
-        pending_payments = Payment.objects.filter(status='pending').aggregate(total=Sum('monthly_payment'))[
-                               'total'] or Decimal('0')
-        overdue_payments = Payment.objects.filter(status='overdue').aggregate(total=Sum('monthly_payment'))[
-                               'total'] or Decimal('0')
-        payments_due_today = \
-        Payment.objects.filter(due_date=today.day, status='pending').aggregate(total=Sum('monthly_payment'))[
-            'total'] or Decimal('0')
-        payments_paid_today = \
-        Payment.objects.filter(status='paid', created_at__date=today).aggregate(total=Sum('paid_amount'))[
-            'total'] or Decimal('0')
+        paid_payments = Payment.objects.filter(status='paid').aggregate(total=Sum('paid_amount'))['total'] or Decimal('0')
+        pending_payments = Payment.objects.filter(status='pending').aggregate(total=Sum('monthly_payment'))['total'] or Decimal('0')
+        overdue_payments = Payment.objects.filter(status='overdue').aggregate(total=Sum('monthly_payment'))['total'] or Decimal('0')
+        payments_due_today = Payment.objects.filter(due_date=today.day, status='pending').aggregate(total=Sum('monthly_payment'))['total'] or Decimal('0')
+        payments_paid_today = Payment.objects.filter(status='paid', created_at__date=today).aggregate(total=Sum('paid_amount'))['total'] or Decimal('0')
 
         data = {
-            'total_sales': total_sales,  # Jami sotuvlar (summa)
-            'sold_apartments': sold_apartments,  # Sotilgan xonadonlar (soni)
-            'clients': clients,  # Mijozlar (soni)
-            'total_objects': total_objects,  # Jami obyektlar
-            'total_apartments': total_apartments,  # Jami xonadonlar
-            'free_apartments': free_apartments,  # Bo‘sh xonadonlar
-            'reserved_apartments': reserved_apartments,  # Band qilingan xonadonlar
-            'average_price': average_price,  # O‘rtacha narx
-            'total_payments': total_payments,  # Jami to‘lovlar (har oylik)
-            'paid_payments': paid_payments,  # To‘langan to‘lovlar (jami)
-            'pending_payments': pending_payments,  # Kutilayotgan to‘lovlar
-            'overdue_payments': overdue_payments,  # Muddati o‘tgan to‘lovlar
-            'payments_due_today': payments_due_today,  # Bugun to‘lov qilinishi kerak
-            'payments_paid_today': payments_paid_today,  # Bugun to‘langan
+            'total_sales': total_sales,
+            'sold_apartments': sold_apartments,
+            'clients': clients,
+            'total_objects': total_objects,
+            'total_apartments': total_apartments,
+            'free_apartments': free_apartments,
+            'reserved_apartments': reserved_apartments,
+            'average_price': average_price,
+            'total_payments': total_payments,
+            'paid_payments': paid_payments,
+            'pending_payments': pending_payments,
+            'overdue_payments': overdue_payments,
+            'payments_due_today': payments_due_today,
+            'payments_paid_today': payments_paid_today,
         }
         return Response(data)
 
+class UserPaymentViewSet(viewsets.ModelViewSet):
+    queryset = UserPayment.objects.all()
+    serializer_class = UserPaymentSerializer
+    pagination_class = CustomPagination
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['user', 'date', 'payment_type']
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -229,7 +219,6 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['user_type'] = user.user_type
         token['fio'] = user.fio
         return token
-
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
