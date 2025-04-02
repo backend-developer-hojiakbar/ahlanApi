@@ -14,6 +14,7 @@ import os
 from django.conf import settings
 from django.db.models import Sum, Count, Avg
 from datetime import datetime
+from decimal import Decimal
 
 class ObjectViewSet(viewsets.ModelViewSet):
     queryset = Object.objects.all()
