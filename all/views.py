@@ -1,7 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document, UserPayment
+from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document as DocumentModel, UserPayment
 from .serializers import (ObjectSerializer, ApartmentSerializer, UserSerializer,
                          ExpenseTypeSerializer, SupplierSerializer, ExpenseSerializer,
                          PaymentSerializer, UserPaymentSerializer, DocumentSerializer)
@@ -157,7 +157,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         os.makedirs(os.path.dirname(docx_path), exist_ok=True)
         doc.save(docx_path)
 
-        Document.objects.create(
+        DocumentModel.objects.create(
             payment=payment,
             docx_file=f"contracts/docx/contract_{payment.id}.docx",
             pdf_file=None
@@ -214,7 +214,7 @@ class UserPaymentViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated()]
 
 class DocumentViewSet(viewsets.ModelViewSet):
-    queryset = Document.objects.all()
+    queryset = DocumentModel.objects.all()  # DocumentModel ishlatiladi
     serializer_class = DocumentSerializer
     pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
