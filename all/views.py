@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document, UserPayment
 from .serializers import (ObjectSerializer, ApartmentSerializer, UserSerializer,
                          ExpenseTypeSerializer, SupplierSerializer, ExpenseSerializer,
-                         PaymentSerializer, UserPaymentSerializer)
+                         PaymentSerializer, UserPaymentSerializer, DocumentSerializer)
 from .pagination import CustomPagination
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -131,13 +131,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
         doc.add_paragraph(
             f"1. Томонлар «Буюртмачи» хонадон сотиб олишга розилиги туғрисида «Бажарувчи» га ариза орқали мурожаат этилгандан сўнг, "
             f"Ўзбекистон Республикаси, Фарғона вилояти, Қўқон шаҳар {obj.address} да жойлашган {obj.floors} қаватли {obj.total_apartments} хонадонли "
-            f"{apartment.room_number}-хонадонли турар-жой биносини қуришга, буюртмачи вазифасини бажариш тўғрисида шартномани (кейинги уринларда - асосий шартнома) тузиш мажбуриятини ўз зиммаларига оладилар."
+            f"{apartment.room_number}-хонадонli турар-жой биносини қуришга, буюртмачи вазифасини бажариш тўғрисида шартномани (кейинги уринларда - асосий шартнома) тузиш мажбуриятини ўз зиммаларига оладилар."
         )
 
         doc.add_heading("МУҲИМ ШАРТЛАР.", level=1)
         doc.add_paragraph(
             f"а) «Буюртмачи»га топшириладиган уйнинг {apartment.room_number}-хонадон ({apartment.rooms}-хонали умумий фойдаланиш майдони {apartment.area} кв м) "
-            f"умумий қийматининг бошланғич нархи {payment.total_amount} сўмни ташкил этади ва ушbu нарх томонлар томонидан келишилган ҳолда ўзгариши мумкин;"
+            f"умумий қийматининг бошланғич нархи {payment.total_amount} сўмни ташкил этади ва ушбу нарх томонлар томонидан келишилган ҳолда ўзгариши мумкин;"
         )
         doc.add_paragraph(
             f"б) Бажарувчи «тайёр ҳолда топшириш» шартларида турар-жой биносини қуришга бажарувчи вазифасини бажариш мажбуриятини ўз зиммасига олади..."
@@ -207,6 +207,18 @@ class UserPaymentViewSet(viewsets.ModelViewSet):
     pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
     filterset_fields = ['user', 'date', 'payment_type']
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
+class DocumentViewSet(viewsets.ModelViewSet):
+    queryset = Document.objects.all()
+    serializer_class = DocumentSerializer
+    pagination_class = CustomPagination
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['payment', 'created_at']
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
