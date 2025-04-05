@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils import timezone
-from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document, UserPayment
+from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document, UserPayment, SupplierPayment
 
 @admin.register(Object)
 class ObjectAdmin(admin.ModelAdmin):
@@ -10,7 +10,7 @@ class ObjectAdmin(admin.ModelAdmin):
 
 @admin.register(Apartment)
 class ApartmentAdmin(admin.ModelAdmin):
-    list_display = ('object', 'room_number', 'rooms', 'floor', 'price', 'status')
+    list_display = ('object', 'room_number', 'rooms', 'floor', 'price', 'status', 'reserved_until', 'total_payments')
     list_filter = ('status', 'object', 'rooms', 'floor')
     search_fields = ('object__name', 'room_number')
 
@@ -32,9 +32,9 @@ class ExpenseTypeAdmin(admin.ModelAdmin):
 
 @admin.register(Supplier)
 class SupplierAdmin(admin.ModelAdmin):
-    list_display = ('company_name', 'phone_number', 'email', 'balance')
+    list_display = ('company_name', 'phone_number', 'balance')
     list_filter = ('balance',)
-    search_fields = ('company_name', 'phone_number', 'email')
+    search_fields = ('company_name', 'phone_number')
 
 @admin.register(Expense)
 class ExpenseAdmin(admin.ModelAdmin):
@@ -44,7 +44,7 @@ class ExpenseAdmin(admin.ModelAdmin):
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ('user', 'apartment', 'payment_type', 'total_amount', 'monthly_payment', 'due_date', 'paid_amount', 'status', 'created_at')
+    list_display = ('user', 'apartment', 'payment_type', 'total_amount', 'monthly_payment', 'due_date', 'paid_amount', 'status', 'created_at', 'reservation_deadline')
     list_filter = ('payment_type', 'status', 'created_at')
     search_fields = ('user__fio', 'apartment__room_number')
 
@@ -67,8 +67,8 @@ class PaymentAdmin(admin.ModelAdmin):
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
-    list_display = ('payment', 'created_at')
-    list_filter = ('created_at',)
+    list_display = ('payment', 'document_type', 'created_at')
+    list_filter = ('document_type', 'created_at')
     search_fields = ('payment__user__fio',)
 
 @admin.register(UserPayment)
@@ -76,3 +76,9 @@ class UserPaymentAdmin(admin.ModelAdmin):
     list_display = ('user', 'amount', 'payment_type', 'date', 'description')
     list_filter = ('payment_type', 'date')
     search_fields = ('user__fio', 'description')
+
+@admin.register(SupplierPayment)
+class SupplierPaymentAdmin(admin.ModelAdmin):
+    list_display = ('supplier', 'amount', 'payment_type', 'date', 'description')
+    list_filter = ('payment_type', 'date')
+    search_fields = ('supplier__company_name', 'description')

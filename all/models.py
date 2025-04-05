@@ -26,11 +26,14 @@ class Apartment(models.Model):
     STATUS_CHOICES = (
         ('bosh', 'Bo‘sh'),
         ('band', 'Band qilingan'),
+        ('muddatli', 'Muddatli'),
         ('sotilgan', 'Sotilgan'),
+        ('ipoteka', 'Ipoteka'),
+        ('subsidiya', 'Subsidiya'),
     )
 
     object = models.ForeignKey(Object, on_delete=models.CASCADE, related_name='apartments')
-    room_number = models.PositiveIntegerField()
+    room_number = models.CharField(max_length=100)
     rooms = models.PositiveIntegerField()
     area = models.FloatField()
     floor = models.PositiveIntegerField()
@@ -38,10 +41,17 @@ class Apartment(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='bosh')
     description = models.TextField(blank=True)
     secret_code = models.CharField(max_length=8, unique=True, editable=False)
+    reserved_until = models.DateTimeField(null=True, blank=True)
+    reservation_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    total_payments = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)  # Umumiy to‘lovlar
 
     def save(self, *args, **kwargs):
         if not self.secret_code:
             self.secret_code = ''.join(random.choices(string.digits, k=8))
+        if self.status == 'band' and self.reserved_until and datetime.now() > self.reserved_until:
+            self.status = 'bosh'
+            self.reserved_until = None
+            self.reservation_amount = None
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -121,13 +131,41 @@ class Supplier(models.Model):
     company_name = models.CharField(max_length=255)
     contact_person_name = models.CharField(max_length=255)
     phone_number = models.CharField(max_length=15, unique=True)
-    email = models.EmailField(unique=True)
     address = models.TextField()
     description = models.TextField(blank=True)
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
 
     def __str__(self):
         return self.company_name
+
+    def get_expense_details(self):
+        expenses = self.expenses.all()
+        total_expenses = sum(expense.amount for expense in expenses)
+        return {
+            'total_expenses': total_expenses,
+            'expense_count': expenses.count(),
+            'expenses': [{'id': e.id, 'amount': e.amount, 'date': e.date, 'comment': e.comment} for e in expenses]
+        }
+
+    def get_payment_details(self):
+        payments = self.supplier_payments.all()
+        total_payments = sum(payment.amount for payment in payments)
+        return {
+            'total_payments': total_payments,
+            'payment_count': payments.count(),
+            'payments': [{'id': p.id, 'amount': p.amount, 'date': p.date, 'description': p.description} for p in payments]
+        }
+
+    def get_balance_details(self):
+        expense_details = self.get_expense_details()
+        payment_details = self.get_payment_details()
+        return {
+            'current_balance': self.balance,
+            'total_expenses': expense_details['total_expenses'],
+            'total_payments': payment_details['total_payments'],
+            'expense_details': expense_details['expenses'],
+            'payment_details': payment_details['payments']
+        }
 
     class Meta:
         verbose_name = "Yetkazib beruvchi"
@@ -149,7 +187,7 @@ class Expense(models.Model):
 
     def save(self, *args, **kwargs):
         if self.pk is None:
-            self.supplier.balance += self.amount
+            self.supplier.balance += self.amount  # Xarajat qo‘shilganda balans oshadi
             self.supplier.save()
         super().save(*args, **kwargs)
 
@@ -165,6 +203,8 @@ class Payment(models.Model):
         ('naqd', 'Naqd pul'),
         ('muddatli', 'Muddatli to‘lov'),
         ('ipoteka', 'Ipoteka'),
+        ('subsidiya', 'Subsidiya'),
+        ('band', 'Band qilish'),
     )
     PAYMENT_STATUS = (
         ('pending', 'Kutilmoqda'),
@@ -185,6 +225,7 @@ class Payment(models.Model):
     status = models.CharField(max_length=20, choices=PAYMENT_STATUS, default='pending')
     additional_info = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    reservation_deadline = models.DateTimeField(null=True, blank=True)
 
     def calculate_monthly_payment(self):
         if self.payment_type == 'muddatli' and self.duration_months > 0:
@@ -201,16 +242,40 @@ class Payment(models.Model):
         today = datetime.now().date()
         if self.paid_amount >= self.total_amount:
             self.status = 'paid'
-            self.apartment.status = 'sotilgan'
+            if self.payment_type == 'naqd':
+                self.apartment.status = 'sotilgan'
+            elif self.payment_type == 'muddatli':
+                self.apartment.status = 'muddatli'
+            elif self.payment_type == 'ipoteka':
+                self.apartment.status = 'ipoteka'
+            elif self.payment_type == 'subsidiya':
+                self.apartment.status = 'subsidiya'
+            self.apartment.total_payments += self.paid_amount  # Umumiy to‘lov yangilanadi
+        elif self.payment_type == 'band' and self.reservation_deadline and datetime.now() > self.reservation_deadline:
+            self.status = 'overdue'
+            self.apartment.status = 'bosh'
+            self.apartment.reserved_until = None
+            self.apartment.reservation_amount = None
         elif self.payment_type in ['muddatli', 'ipoteka'] and today.day > self.due_date:
             self.status = 'overdue'
         else:
             self.status = 'pending'
-            self.apartment.status = 'band'
+            if self.payment_type == 'band':
+                self.apartment.status = 'band'
+            elif self.payment_type == 'muddatli':
+                self.apartment.status = 'muddatli'
+            elif self.payment_type == 'ipoteka':
+                self.apartment.status = 'ipoteka'
+            elif self.payment_type == 'subsidiya':
+                self.apartment.status = 'subsidiya'
         self.apartment.save()
 
     def save(self, *args, **kwargs):
         self.total_amount = self.apartment.price
+        if self.payment_type == 'band' and not self.reservation_deadline:
+            self.reservation_deadline = datetime.now() + timedelta(days=1)
+            self.apartment.reserved_until = self.reservation_deadline
+            self.apartment.reservation_amount = self.initial_payment
         self.calculate_monthly_payment()
         super().save(*args, **kwargs)
         if self.payment_type in ['muddatli', 'ipoteka'] and self.duration_months > 0:
@@ -228,13 +293,22 @@ class Payment(models.Model):
         verbose_name_plural = "To‘lovlar"
 
 class Document(models.Model):
+    DOCUMENT_TYPES = (
+        ('kvitansiya', 'Kvitansiya'),
+        ('shartnoma', 'Shartnoma'),
+        ('chek', 'Chek'),
+        ('boshqa', 'Boshqa'),
+    )
+
     payment = models.ForeignKey(Payment, on_delete=models.CASCADE, related_name='documents')
+    document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPES, default='shartnoma')
     docx_file = models.FileField(upload_to='contracts/docx/', null=True, blank=True)
     pdf_file = models.FileField(upload_to='contracts/pdf/', null=True, blank=True)
+    image = models.ImageField(upload_to='documents/images/', null=True, blank=True)  # Rasm qo‘shish
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Shartnoma № {self.payment.id} - {self.payment.user.fio}"
+        return f"{self.document_type} № {self.payment.id} - {self.payment.user.fio}"
 
     class Meta:
         verbose_name = "Hujjat"
@@ -263,3 +337,28 @@ class UserPayment(models.Model):
     class Meta:
         verbose_name = "Foydalanuvchi to‘lovi"
         verbose_name_plural = "Foydalanuvchi to‘lovlari"
+
+class SupplierPayment(models.Model):
+    PAYMENT_TYPES = (
+        ('naqd', 'Naqd pul'),
+        ('muddatli', 'Muddatli to‘lov'),
+        ('ipoteka', 'Ipoteka'),
+    )
+
+    supplier = models.ForeignKey(Supplier, on_delete=models.CASCADE, related_name='supplier_payments')
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    payment_type = models.CharField(max_length=20, choices=PAYMENT_TYPES, default='naqd')
+    date = models.DateTimeField(auto_now_add=True)
+    description = models.TextField(blank=True)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.supplier.balance -= self.amount  # To‘lov qilinganda balansdan ayiriladi
+        self.supplier.save()
+
+    def __str__(self):
+        return f"{self.supplier.company_name} - {self.amount} so‘m - {self.payment_type}"
+
+    class Meta:
+        verbose_name = "Yetkazib beruvchi to‘lovi"
+        verbose_name_plural = "Yetkazib beruvchi to‘lovlari"

@@ -1,10 +1,10 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document as DocumentModel, UserPayment
+from .models import Object, Apartment, User, ExpenseType, Supplier, Expense, Payment, Document as DocumentModel, UserPayment, SupplierPayment
 from .serializers import (ObjectSerializer, ApartmentSerializer, UserSerializer,
                          ExpenseTypeSerializer, SupplierSerializer, ExpenseSerializer,
-                         PaymentSerializer, UserPaymentSerializer, DocumentSerializer)
+                         PaymentSerializer, UserPaymentSerializer, DocumentSerializer, SupplierPaymentSerializer)
 from .pagination import CustomPagination
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -79,7 +79,7 @@ class SupplierViewSet(viewsets.ModelViewSet):
     serializer_class = SupplierSerializer
     pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['company_name', 'phone_number', 'email']
+    filterset_fields = ['company_name', 'phone_number']
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
@@ -152,6 +152,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
             doc.add_paragraph(
                 f"Бошланғич тўлов: {payment.initial_payment} сўм, Фоиз: {payment.interest_rate}%, Ҳар ойлик тўлов: {payment.monthly_payment} сўм."
             )
+        elif payment.payment_type == 'band':
+            doc.add_paragraph(
+                f"Band qilish uchun to‘lov: {payment.initial_payment} so‘m, Muddat: {payment.reservation_deadline}."
+            )
 
         docx_path = os.path.join(settings.MEDIA_ROOT, f"contracts/docx/contract_{payment.id}.docx")
         os.makedirs(os.path.dirname(docx_path), exist_ok=True)
@@ -213,12 +217,24 @@ class UserPaymentViewSet(viewsets.ModelViewSet):
             return [permissions.IsAdminUser()]
         return [permissions.IsAuthenticated()]
 
+class SupplierPaymentViewSet(viewsets.ModelViewSet):
+    queryset = SupplierPayment.objects.all()
+    serializer_class = SupplierPaymentSerializer
+    pagination_class = CustomPagination
+    permission_classes = [permissions.IsAuthenticated]
+    filterset_fields = ['supplier', 'date', 'payment_type']
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
 class DocumentViewSet(viewsets.ModelViewSet):
-    queryset = DocumentModel.objects.all()  # DocumentModel ishlatiladi
+    queryset = DocumentModel.objects.all()
     serializer_class = DocumentSerializer
     pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['payment', 'created_at']
+    filterset_fields = ['payment', 'created_at', 'document_type']
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
