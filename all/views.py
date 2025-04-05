@@ -33,7 +33,34 @@ class ApartmentViewSet(viewsets.ModelViewSet):
     serializer_class = ApartmentSerializer
     pagination_class = CustomPagination
     permission_classes = [permissions.IsAuthenticated]
-    filterset_fields = ['object', 'rooms', 'floor', 'status', 'price']
+    filterset_fields = [
+        'object',
+        'rooms',
+        'floor',
+        'status',
+        'price',
+        'area',  # Maydon bo'yicha filtr
+        'room_number'  # Xonadon raqami bo'yicha qidiruv
+    ]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # Qo'shimcha filtrlar
+        min_price = self.request.query_params.get('min_price', None)
+        max_price = self.request.query_params.get('max_price', None)
+        min_area = self.request.query_params.get('min_area', None)
+        max_area = self.request.query_params.get('max_area', None)
+
+        if min_price:
+            queryset = queryset.filter(price__gte=min_price)
+        if max_price:
+            queryset = queryset.filter(price__lte=max_price)
+        if min_area:
+            queryset = queryset.filter(area__gte=min_area)
+        if max_area:
+            queryset = queryset.filter(area__lte=max_area)
+
+        return queryset
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
