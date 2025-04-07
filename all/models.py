@@ -27,9 +27,7 @@ class Apartment(models.Model):
         ('bosh', 'Bo‘sh'),
         ('band', 'Band qilingan'),
         ('muddatli', 'Muddatli'),
-        ('sotilgan', 'Sotilgan'),
-        ('ipoteka', 'Ipoteka'),
-        ('subsidiya', 'Subsidiya'),
+        ('sotilgan', 'Sotilgan')
     )
 
     object = models.ForeignKey(Object, on_delete=models.CASCADE, related_name='apartments')
@@ -43,12 +41,13 @@ class Apartment(models.Model):
     secret_code = models.CharField(max_length=8, unique=True, editable=False)
     reserved_until = models.DateTimeField(null=True, blank=True)
     reservation_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    total_payments = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)  # Umumiy to‘lovlar
+    total_payments = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
 
     def save(self, *args, **kwargs):
         if not self.secret_code:
             self.secret_code = ''.join(random.choices(string.digits, k=8))
-        if self.status == 'band' and self.reserved_until and datetime.now() > self.reserved_until:
+        # Agar reserved_until o'tib ketgan bo'lsa, statusni "bosh" qilamiz
+        if self.status == 'band' and self.reserved_until and datetime.now() >= self.reserved_until:
             self.status = 'bosh'
             self.reserved_until = None
             self.reservation_amount = None
@@ -205,6 +204,7 @@ class Payment(models.Model):
         ('ipoteka', 'Ipoteka'),
         ('subsidiya', 'Subsidiya'),
         ('band', 'Band qilish'),
+        ('barter', 'Barter'),
     )
     PAYMENT_STATUS = (
         ('pending', 'Kutilmoqda'),
@@ -240,34 +240,31 @@ class Payment(models.Model):
 
     def update_status(self):
         today = datetime.now().date()
+        # To'lov to'liq amalga oshirilgan bo'lsa
         if self.paid_amount >= self.total_amount:
             self.status = 'paid'
-            if self.payment_type == 'naqd':
+            if self.payment_type in ['naqd', 'ipoteka', 'barter']:
                 self.apartment.status = 'sotilgan'
-            elif self.payment_type == 'muddatli':
+            elif self.payment_type in ['muddatli', 'subsidiya']:
                 self.apartment.status = 'muddatli'
-            elif self.payment_type == 'ipoteka':
-                self.apartment.status = 'ipoteka'
-            elif self.payment_type == 'subsidiya':
-                self.apartment.status = 'subsidiya'
-            self.apartment.total_payments += self.paid_amount  # Umumiy to‘lov yangilanadi
-        elif self.payment_type == 'band' and self.reservation_deadline and datetime.now() > self.reservation_deadline:
+            self.apartment.total_payments += self.paid_amount
+        # Band qilingan va reservation_deadline o'tib ketgan bo'lsa
+        elif self.payment_type == 'band' and self.reservation_deadline and datetime.now() >= self.reservation_deadline:
             self.status = 'overdue'
             self.apartment.status = 'bosh'
             self.apartment.reserved_until = None
             self.apartment.reservation_amount = None
+        # Muddatli yoki ipoteka to'lovlari muddati o'tib ketgan bo'lsa
         elif self.payment_type in ['muddatli', 'ipoteka'] and today.day > self.due_date:
             self.status = 'overdue'
         else:
             self.status = 'pending'
-            if self.payment_type == 'band':
+            if self.payment_type == 'band' and self.reservation_deadline:
                 self.apartment.status = 'band'
-            elif self.payment_type == 'muddatli':
+            elif self.payment_type in ['muddatli', 'subsidiya']:
                 self.apartment.status = 'muddatli'
-            elif self.payment_type == 'ipoteka':
-                self.apartment.status = 'ipoteka'
-            elif self.payment_type == 'subsidiya':
-                self.apartment.status = 'subsidiya'
+            elif self.payment_type in ['naqd', 'ipoteka', 'barter']:
+                self.apartment.status = 'sotilgan'
         self.apartment.save()
 
     def save(self, *args, **kwargs):
@@ -291,6 +288,7 @@ class Payment(models.Model):
     class Meta:
         verbose_name = "To‘lov"
         verbose_name_plural = "To‘lovlar"
+
 
 class Document(models.Model):
     DOCUMENT_TYPES = (

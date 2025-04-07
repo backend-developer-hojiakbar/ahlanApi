@@ -51,10 +51,13 @@ class ApartmentViewSet(viewsets.ModelViewSet):
         min_area = self.request.query_params.get('min_area', None)
         max_area = self.request.query_params.get('max_area', None)
 
+        # Narx bo'yicha filtr
         if min_price:
             queryset = queryset.filter(price__gte=min_price)
         if max_price:
             queryset = queryset.filter(price__lte=max_price)
+
+        # Maydon bo'yicha filtr
         if min_area:
             queryset = queryset.filter(area__gte=min_area)
         if max_area:
@@ -157,7 +160,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         doc.add_heading("ШАРТНОМА ПРЕДМЕТИ.", level=1)
         doc.add_paragraph(
             f"1. Томонлар «Буюртмачи» хонадон сотиб олишга розилиги туғрисида «Бажарувчи» га ариза орқали мурожаат этилгандан сўнг, "
-            f"Ўзбекистон Республикаси, Фарғона вилояти, Қўқон шаҳар {obj.address} да жойлашган {obj.floors} қаватли {obj.total_apartments} хонадонли "
+            f"Ўзбекистон Республикаси, Ф appellants вилояти, Қўқон шаҳар {obj.address} да жойлашган {obj.floors} қаватли {obj.total_apartments} хонадонли "
             f"{apartment.room_number}-хонадонli турар-жой биносини қуришга, буюртмачи вазифасини бажариш тўғрисида шартномани (кейинги уринларда - асосий шартнома) тузиш мажбуриятини ўз зиммаларига оладилар."
         )
 

@@ -5,7 +5,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-c3h3p)=1ccm2c+42-l81g=9=2d0jtt$%w@1)i6$rq464098jv^'
 DEBUG = True
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ['ahlan.uz', 'api.ahlan.uz', '64.226.109.56', 'localhost', '127.0.0.1']
 
 INSTALLED_APPS = [
     'jazzmin',
@@ -68,7 +68,7 @@ DATABASES = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://ahlan.cdpos.uz",
+    "http://ahlan.uz",
 ]
 
 CORS_ALLOW_METHODS = [
