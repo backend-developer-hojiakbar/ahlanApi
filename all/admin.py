@@ -10,9 +10,15 @@ class ObjectAdmin(admin.ModelAdmin):
 
 @admin.register(Apartment)
 class ApartmentAdmin(admin.ModelAdmin):
-    list_display = ('object', 'room_number', 'rooms', 'floor', 'price', 'status', 'reserved_until', 'total_payments')
+    list_display = ('object', 'room_number', 'rooms', 'floor', 'price', 'status', 'reserved_until', 'total_payments', 'balance')
     list_filter = ('status', 'object', 'rooms', 'floor')
     search_fields = ('object__name', 'room_number')
+    actions = ['add_balance']
+
+    def add_balance(self, request, queryset):
+        for apartment in queryset:
+            apartment.add_balance(1000000)  # Masalan, 1 million so‘m qo‘shish
+        self.message_user(request, "Tanlangan xonadonlarga balans qo‘shildi!")
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
@@ -44,17 +50,22 @@ class ExpenseAdmin(admin.ModelAdmin):
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ('user', 'apartment', 'payment_type', 'total_amount', 'monthly_payment', 'due_date', 'paid_amount', 'status', 'created_at', 'reservation_deadline')
+    list_display = ('user', 'apartment', 'payment_type', 'total_amount', 'initial_payment', 'monthly_payment', 'due_date', 'paid_amount', 'status', 'created_at', 'reservation_deadline', 'bank_name')
     list_filter = ('payment_type', 'status', 'created_at')
     search_fields = ('user__fio', 'apartment__room_number')
+    actions = ['process_payment']
+
+    def process_payment(self, request, queryset):
+        for payment in queryset:
+            payment.process_payment(amount=1000000)  # Masalan, 1 million so‘m qo‘shish
+        self.message_user(request, "Tanlangan to‘lovlar qayta ishlandi!")
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         today = timezone.now().day
         overdue = qs.filter(due_date__lt=today, status='pending')
         for payment in overdue:
-            payment.status = 'overdue'
-            payment.save()
+            payment.update_status()
         return qs
 
     def changelist_view(self, request, extra_context=None):

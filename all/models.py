@@ -42,16 +42,31 @@ class Apartment(models.Model):
     reserved_until = models.DateTimeField(null=True, blank=True)
     reservation_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     total_payments = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    balance = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
 
     def save(self, *args, **kwargs):
         if not self.secret_code:
             self.secret_code = ''.join(random.choices(string.digits, k=8))
-        # Agar reserved_until o'tib ketgan bo'lsa, statusni "bosh" qilamiz
         if self.status == 'band' and self.reserved_until and datetime.now() >= self.reserved_until:
             self.status = 'bosh'
             self.reserved_until = None
             self.reservation_amount = None
         super().save(*args, **kwargs)
+        self.check_status()
+
+    def add_balance(self, amount):
+        if amount < 0:
+            raise ValueError("Qo‘shiladigan summa manfiy bo‘lishi mumkin emas!")
+        self.balance += Decimal(str(amount))
+        self.total_payments += Decimal(str(amount))
+        self.save()
+
+    def check_status(self):
+        if self.balance >= self.price and self.status in ['muddatli', 'band']:
+            self.status = 'sotilgan'
+            self.reserved_until = None
+            self.reservation_amount = None
+            self.save()
 
     def __str__(self):
         return f"{self.object.name} - {self.rooms} xonali"
@@ -186,7 +201,7 @@ class Expense(models.Model):
 
     def save(self, *args, **kwargs):
         if self.pk is None:
-            self.supplier.balance += self.amount  # Xarajat qo‘shilganda balans oshadi
+            self.supplier.balance += self.amount
             self.supplier.save()
         super().save(*args, **kwargs)
 
@@ -226,6 +241,7 @@ class Payment(models.Model):
     additional_info = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     reservation_deadline = models.DateTimeField(null=True, blank=True)
+    bank_name = models.CharField(max_length=255, null=True, blank=True)
 
     def calculate_monthly_payment(self):
         if self.payment_type == 'muddatli' and self.duration_months > 0:
@@ -233,54 +249,75 @@ class Payment(models.Model):
             interest = remaining_amount * (Decimal(str(self.interest_rate)) / Decimal('100'))
             total_with_interest = remaining_amount + interest
             self.monthly_payment = total_with_interest / Decimal(str(self.duration_months))
-        elif self.payment_type == 'naqd':
+        elif self.payment_type in ['naqd', 'ipoteka', 'subsidiya', 'barter']:
             self.monthly_payment = Decimal('0')
         else:
-            self.monthly_payment = (self.total_amount - self.initial_payment) / Decimal(str(self.duration_months))
+            self.monthly_payment = (self.total_amount - self.initial_payment) / Decimal(str(self.duration_months or 1))
+
+    def process_payment(self, amount=None):
+        """
+        Umumiy to‘lovlarni qayta ishlash funksiyasi.
+        Barcha to‘lov turlari uchun boshlang‘ich to‘lovni qo‘shadi va xonadon statusini yangilaydi.
+        """
+        if amount is not None and amount < 0:
+            raise ValueError("To‘lov summasi manfiy bo‘lishi mumkin emas!")
+
+        # Boshlang‘ich to‘lovni qo‘shish
+        payment_amount = Decimal(str(amount or self.initial_payment))
+        self.paid_amount += payment_amount
+        self.apartment.add_balance(payment_amount)
+
+        # To‘lov turiga qarab logika
+        if self.payment_type == 'band':
+            self.apartment.status = 'band'
+            self.apartment.reserved_until = self.reservation_deadline or (datetime.now() + timedelta(days=1))
+            self.apartment.reservation_amount = payment_amount
+            self.status = 'pending'
+        elif self.payment_type == 'muddatli':
+            self.apartment.status = 'muddatli'
+            self.status = 'pending'
+            if self.paid_amount >= self.total_amount:
+                self.status = 'paid'
+                self.apartment.status = 'sotilgan'
+        elif self.payment_type in ['naqd', 'ipoteka', 'subsidiya', 'barter']:
+            self.status = 'paid' if self.paid_amount >= self.total_amount else 'pending'
+            self.apartment.status = 'sotilgan' if self.paid_amount >= self.total_amount else 'muddatli'
+
+        # Agar xonadon narxiga yetgan bo‘lsa
+        self.apartment.check_status()
+        self.apartment.save()
+        self.save()
 
     def update_status(self):
+        """
+        Faqat muddatli to‘lovlarning muddati o‘tganligini tekshiradi.
+        """
         today = datetime.now().date()
-        # To'lov to'liq amalga oshirilgan bo'lsa
-        if self.paid_amount >= self.total_amount:
-            self.status = 'paid'
-            if self.payment_type in ['naqd', 'ipoteka', 'barter']:
-                self.apartment.status = 'sotilgan'
-            elif self.payment_type in ['muddatli', 'subsidiya']:
-                self.apartment.status = 'muddatli'
-            self.apartment.total_payments += self.paid_amount
-        # Band qilingan va reservation_deadline o'tib ketgan bo'lsa
+        if self.payment_type in ['muddatli', 'ipoteka'] and today.day > self.due_date and self.status != 'paid':
+            self.status = 'overdue'
         elif self.payment_type == 'band' and self.reservation_deadline and datetime.now() >= self.reservation_deadline:
             self.status = 'overdue'
             self.apartment.status = 'bosh'
             self.apartment.reserved_until = None
             self.apartment.reservation_amount = None
-        # Muddatli yoki ipoteka to'lovlari muddati o'tib ketgan bo'lsa
-        elif self.payment_type in ['muddatli', 'ipoteka'] and today.day > self.due_date:
-            self.status = 'overdue'
-        else:
-            self.status = 'pending'
-            if self.payment_type == 'band' and self.reservation_deadline:
-                self.apartment.status = 'band'
-            elif self.payment_type in ['muddatli', 'subsidiya']:
-                self.apartment.status = 'muddatli'
-            elif self.payment_type in ['naqd', 'ipoteka', 'barter']:
-                self.apartment.status = 'sotilgan'
-        self.apartment.save()
+            self.apartment.save()
+        self.save()
+
+    def close_payment(self, amount):
+        """
+        Muddatli to‘lovlarga qo‘shimcha to‘lov qo‘shish.
+        """
+        if self.payment_type != 'muddatli':
+            raise ValueError("Faqat muddatli to‘lovlarni yopish mumkin!")
+        self.process_payment(amount)
 
     def save(self, *args, **kwargs):
         self.total_amount = self.apartment.price
-        if self.payment_type == 'band' and not self.reservation_deadline:
-            self.reservation_deadline = datetime.now() + timedelta(days=1)
-            self.apartment.reserved_until = self.reservation_deadline
-            self.apartment.reservation_amount = self.initial_payment
         self.calculate_monthly_payment()
         super().save(*args, **kwargs)
-        if self.payment_type in ['muddatli', 'ipoteka'] and self.duration_months > 0:
-            remaining_amount = self.total_amount - self.initial_payment
-            interest = remaining_amount * (Decimal(str(self.interest_rate)) / Decimal('100'))
-            total_with_interest = remaining_amount + interest
-            self.user.add_balance(-total_with_interest)
-        self.update_status()
+        # Yangi to‘lov yaratilganda boshlang‘ich to‘lovni qayta ishlash
+        if self.pk is None and self.initial_payment > 0:
+            self.process_payment()
 
     def __str__(self):
         return f"{self.user.fio} - {self.apartment} - {self.payment_type}"
@@ -288,7 +325,6 @@ class Payment(models.Model):
     class Meta:
         verbose_name = "To‘lov"
         verbose_name_plural = "To‘lovlar"
-
 
 class Document(models.Model):
     DOCUMENT_TYPES = (
@@ -302,7 +338,7 @@ class Document(models.Model):
     document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPES, default='shartnoma')
     docx_file = models.FileField(upload_to='contracts/docx/', null=True, blank=True)
     pdf_file = models.FileField(upload_to='contracts/pdf/', null=True, blank=True)
-    image = models.ImageField(upload_to='documents/images/', null=True, blank=True)  # Rasm qo‘shish
+    image = models.ImageField(upload_to='documents/images/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -351,7 +387,7 @@ class SupplierPayment(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        self.supplier.balance -= self.amount  # To‘lov qilinganda balansdan ayiriladi
+        self.supplier.balance -= self.amount
         self.supplier.save()
 
     def __str__(self):

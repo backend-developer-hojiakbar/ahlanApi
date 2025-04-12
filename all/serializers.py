@@ -13,7 +13,8 @@ class ApartmentSerializer(serializers.ModelSerializer):
         model = Apartment
         fields = [
             'id', 'object', 'object_name', 'room_number', 'rooms', 'area', 'floor',
-            'price', 'status', 'description', 'secret_code', 'reserved_until', 'reservation_amount', 'total_payments'
+            'price', 'status', 'description', 'secret_code', 'reserved_until',
+            'reservation_amount', 'total_payments', 'balance'
         ]
 
 class UserSerializer(serializers.ModelSerializer):
@@ -83,7 +84,8 @@ class PaymentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'user_fio', 'apartment', 'apartment_info', 'payment_type', 'total_amount',
             'initial_payment', 'interest_rate', 'duration_months', 'monthly_payment', 'due_date',
-            'paid_amount', 'status', 'additional_info', 'created_at', 'documents', 'reservation_deadline'
+            'paid_amount', 'status', 'additional_info', 'created_at', 'documents', 'reservation_deadline',
+            'bank_name'
         ]
 
 class UserPaymentSerializer(serializers.ModelSerializer):
