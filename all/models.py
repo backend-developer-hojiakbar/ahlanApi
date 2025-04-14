@@ -6,6 +6,7 @@ from django.contrib.auth.hashers import make_password
 from .managers import CustomUserManager
 from decimal import Decimal
 from datetime import datetime, timedelta
+from django.utils import timezone
 
 class Object(models.Model):
     name = models.CharField(max_length=255)
@@ -47,12 +48,15 @@ class Apartment(models.Model):
     def save(self, *args, **kwargs):
         if not self.secret_code:
             self.secret_code = ''.join(random.choices(string.digits, k=8))
-        if self.status == 'band' and self.reserved_until and datetime.now() >= self.reserved_until:
+        # Band muddati o'tganligini faqat status 'band' bo'lsa tekshirish
+        if self.status == 'band' and self.reserved_until and timezone.now() >= self.reserved_until:
             self.status = 'bosh'
             self.reserved_until = None
             self.reservation_amount = None
         super().save(*args, **kwargs)
-        self.check_status()
+        # Statusni qayta tekshirish faqat kerak bo'lganda
+        if self.status in ['muddatli', 'band', 'ipoteka', 'subsidiya']:
+            self.check_status()
 
     def add_balance(self, amount):
         if amount < 0:
@@ -270,8 +274,9 @@ class Payment(models.Model):
         # To‘lov turiga qarab logika
         if self.payment_type == 'band':
             self.apartment.status = 'band'
-            self.apartment.reserved_until = self.reservation_deadline or (datetime.now() + timedelta(days=1))
+            self.apartment.reserved_until = self.reservation_deadline or (timezone.now() + timedelta(days=7))
             self.apartment.reservation_amount = payment_amount
+            self.apartment.save()
             self.status = 'pending'
         elif self.payment_type == 'muddatli':
             self.apartment.status = 'muddatli'
@@ -290,12 +295,16 @@ class Payment(models.Model):
 
     def update_status(self):
         """
-        Faqat muddatli to‘lovlarning muddati o‘tganligini tekshiradi.
+        To‘lov statusini yangilash, band muddati o‘tganligini tekshirish.
         """
-        today = datetime.now().date()
-        if self.payment_type in ['muddatli', 'ipoteka'] and today.day > self.due_date and self.status != 'paid':
-            self.status = 'overdue'
-        elif self.payment_type == 'band' and self.reservation_deadline and datetime.now() >= self.reservation_deadline:
+        today = timezone.now()  # datetime.datetime ob'ekti
+        # Muddatli, ipoteka yoki subsidiya to‘lovlari uchun due_date tekshiruvi
+        if self.payment_type in ['muddatli', 'ipoteka', 'subsidiya'] and self.status != 'paid':
+            current_day = today.day
+            if current_day > self.due_date:
+                self.status = 'overdue'
+        # Band to‘lovi uchun reservation_deadline tekshiruvi
+        elif self.payment_type == 'band' and self.reservation_deadline and today >= self.reservation_deadline:
             self.status = 'overdue'
             self.apartment.status = 'bosh'
             self.apartment.reserved_until = None
