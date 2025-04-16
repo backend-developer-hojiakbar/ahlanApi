@@ -16,7 +16,7 @@ from django.conf import settings
 from django.db.models import Sum, Count, Avg
 from datetime import datetime
 from decimal import Decimal
-from docx import Document as DocxDocument  # python-docx uchun alohida nom
+from docx import Document as DocxDocument
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -82,6 +82,45 @@ class ApartmentViewSet(viewsets.ModelViewSet):
             'apartment': str(apartment),
             'total_payments': total_payments,
             'balance': balance
+        })
+
+    @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def overdue_payments(self, request, pk=None):
+        apartment = self.get_object()
+        overdue_data = apartment.get_overdue_payments()
+        return Response({
+            'apartment': str(apartment),
+            'overdue_payments': overdue_data['overdue_payments'],
+            'total_overdue': overdue_data['total_overdue']
+        })
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def overdue_payments_report(self, request):
+        object_id = request.query_params.get('object_id', None)
+        apartment_id = request.query_params.get('apartment_id', None)
+        queryset = Apartment.objects.all()
+
+        if object_id:
+            queryset = queryset.filter(object_id=object_id)
+        if apartment_id:
+            queryset = queryset.filter(id=apartment_id)
+
+        report = []
+        total_overdue_all = Decimal('0')
+        for apartment in queryset:
+            overdue_data = apartment.get_overdue_payments()
+            if overdue_data['overdue_payments']:
+                report.append({
+                    'apartment': str(apartment),
+                    'object': apartment.object.name,
+                    'overdue_payments': overdue_data['overdue_payments'],
+                    'total_overdue': overdue_data['total_overdue']
+                })
+                total_overdue_all += overdue_data['total_overdue']
+
+        return Response({
+            'report': report,
+            'total_overdue_all': total_overdue_all
         })
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -158,16 +197,33 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def process_payment(self, request, pk=None):
         payment = self.get_object()
         amount = request.data.get('amount', None)
+        payment_date = request.data.get('payment_date', None)
         try:
+            if payment_date:
+                payment.payment_date = timezone.make_aware(datetime.strptime(payment_date, '%Y-%m-%d'))
             payment.process_payment(amount=float(amount) if amount else None)
+            payment.update_status()
             return Response({
                 'message': f"To‘lov muvaffaqiyatli qayta ishlandi",
                 'payment_status': payment.status,
                 'apartment_status': payment.apartment.status,
-                'apartment_balance': payment.apartment.balance
+                'apartment_balance': payment.apartment.balance,
+                'overdue_payments': payment.get_overdue_payments()
             })
         except ValueError as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def get_overdue_payments(self, request, pk=None):
+        payment = self.get_object()
+        overdue_data = payment.get_overdue_payments()
+        return Response({
+            'payment_id': payment.id,
+            'user': payment.user.fio,
+            'apartment': str(payment.apartment),
+            'overdue_payments': overdue_data['overdue_payments'],
+            'total_overdue': overdue_data['total_overdue']
+        })
 
     @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def download_contract(self, request, pk=None):

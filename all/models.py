@@ -48,14 +48,12 @@ class Apartment(models.Model):
     def save(self, *args, **kwargs):
         if not self.secret_code:
             self.secret_code = ''.join(random.choices(string.digits, k=8))
-        # Band muddati o'tganligini faqat status 'band' bo'lsa tekshirish
         if self.status == 'band' and self.reserved_until and timezone.now() >= self.reserved_until:
             self.status = 'bosh'
             self.reserved_until = None
             self.reservation_amount = None
         super().save(*args, **kwargs)
-        # Statusni qayta tekshirish faqat kerak bo'lganda
-        if self.status in ['muddatli', 'band', 'ipoteka', 'subsidiya']:
+        if self.status in ['muddatli', 'band']:
             self.check_status()
 
     def add_balance(self, amount):
@@ -71,6 +69,22 @@ class Apartment(models.Model):
             self.reserved_until = None
             self.reservation_amount = None
             self.save()
+
+    def get_overdue_payments(self):
+        """
+        Xonadon uchun muddati o‘tgan to‘lovlarni va umumiy summasini qaytaradi.
+        """
+        overdue_payments = []
+        total_overdue = Decimal('0')
+        for payment in self.payments.filter(payment_type='muddatli', status__in=['pending', 'overdue']):
+            overdue = payment.get_overdue_payments()
+            overdue_payments.extend(overdue)
+            for item in overdue:
+                total_overdue += item['amount']
+        return {
+            'overdue_payments': overdue_payments,
+            'total_overdue': total_overdue
+        }
 
     def __str__(self):
         return f"{self.object.name} - {self.rooms} xonali"
@@ -98,7 +112,7 @@ class User(AbstractUser):
 
     telegram_chat_id = models.CharField(max_length=50, null=True, blank=True)
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=0.00,
-                                  help_text="Foydalanuvchi balansi (so‘mda)")
+                                 help_text="Foydalanuvchi balansi (so‘mda)")
 
     kafil_fio = models.CharField(max_length=255, null=True, blank=True)
     kafil_address = models.TextField(null=True, blank=True)
@@ -210,7 +224,7 @@ class Expense(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.supplier.company_name} - {self.amount}"
+        return f"{self.supplier.company_name} - self.amount"
 
     class Meta:
         verbose_name = "Xarajat"
@@ -244,6 +258,7 @@ class Payment(models.Model):
     status = models.CharField(max_length=20, choices=PAYMENT_STATUS, default='pending')
     additional_info = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    payment_date = models.DateTimeField(null=True, blank=True, help_text="Foydalanuvchi to‘lov sanasini kiritadi")
     reservation_deadline = models.DateTimeField(null=True, blank=True)
     bank_name = models.CharField(max_length=255, null=True, blank=True)
 
@@ -261,17 +276,14 @@ class Payment(models.Model):
     def process_payment(self, amount=None):
         """
         Umumiy to‘lovlarni qayta ishlash funksiyasi.
-        Barcha to‘lov turlari uchun boshlang‘ich to‘lovni qo‘shadi va xonadon statusini yangilaydi.
         """
         if amount is not None and amount < 0:
             raise ValueError("To‘lov summasi manfiy bo‘lishi mumkin emas!")
 
-        # Boshlang‘ich to‘lovni qo‘shish
         payment_amount = Decimal(str(amount or self.initial_payment))
         self.paid_amount += payment_amount
         self.apartment.add_balance(payment_amount)
 
-        # To‘lov turiga qarab logika
         if self.payment_type == 'band':
             self.apartment.status = 'band'
             self.apartment.reserved_until = self.reservation_deadline or (timezone.now() + timedelta(days=7))
@@ -288,22 +300,25 @@ class Payment(models.Model):
             self.status = 'paid' if self.paid_amount >= self.total_amount else 'pending'
             self.apartment.status = 'sotilgan' if self.paid_amount >= self.total_amount else 'muddatli'
 
-        # Agar xonadon narxiga yetgan bo‘lsa
         self.apartment.check_status()
         self.apartment.save()
         self.save()
 
     def update_status(self):
         """
-        To‘lov statusini yangilash, band muddati o‘tganligini tekshirish.
+        To‘lov statusini yangilash, muddati o‘tganligini tekshirish.
         """
-        today = timezone.now()  # datetime.datetime ob'ekti
-        # Muddatli, ipoteka yoki subsidiya to‘lovlari uchun due_date tekshiruvi
+        today = timezone.now()
         if self.payment_type in ['muddatli', 'ipoteka', 'subsidiya'] and self.status != 'paid':
+            payment_date = self.payment_date or self.created_at
+            payment_day = payment_date.day
             current_day = today.day
-            if current_day > self.due_date:
+            payment_month = payment_date.month
+            current_month = today.month
+            payment_year = payment_date.year
+            current_year = today.year
+            if (current_year > payment_year) or (current_year == payment_year and current_month > payment_month) or (current_year == payment_year and current_month == payment_month and current_day > self.due_date):
                 self.status = 'overdue'
-        # Band to‘lovi uchun reservation_deadline tekshiruvi
         elif self.payment_type == 'band' and self.reservation_deadline and today >= self.reservation_deadline:
             self.status = 'overdue'
             self.apartment.status = 'bosh'
@@ -312,10 +327,37 @@ class Payment(models.Model):
             self.apartment.save()
         self.save()
 
+    def get_overdue_payments(self):
+        """
+        Muddati o‘tgan to‘lovlarni qaytaradi.
+        """
+        today = timezone.now()
+        overdue_payments = []
+        total_overdue = Decimal('0')
+        if self.payment_type == 'muddatli' and self.status != 'paid':
+            start_date = self.payment_date or self.created_at
+            months_passed = (today.year - start_date.year) * 12 + today.month - start_date.month
+            expected_payments = months_passed * self.monthly_payment
+            if self.paid_amount < expected_payments:
+                for i in range(months_passed):
+                    payment_month = (start_date.month + i - 1) % 12 + 1
+                    payment_year = start_date.year + (start_date.month + i - 1) // 12
+                    due_date = timezone.make_aware(datetime(payment_year, payment_month, self.due_date))
+                    expected_amount = (i + 1) * self.monthly_payment
+                    if due_date < today and self.paid_amount < expected_amount:
+                        remaining_amount = min(self.monthly_payment, expected_amount - self.paid_amount)
+                        overdue_payments.append({
+                            'month': f"{payment_month}/{payment_year}",
+                            'amount': remaining_amount,
+                            'due_date': due_date
+                        })
+                        total_overdue += remaining_amount
+        return {
+            'overdue_payments': overdue_payments,
+            'total_overdue': total_overdue
+        }
+
     def close_payment(self, amount):
-        """
-        Muddatli to‘lovlarga qo‘shimcha to‘lov qo‘shish.
-        """
         if self.payment_type != 'muddatli':
             raise ValueError("Faqat muddatli to‘lovlarni yopish mumkin!")
         self.process_payment(amount)
@@ -323,8 +365,9 @@ class Payment(models.Model):
     def save(self, *args, **kwargs):
         self.total_amount = self.apartment.price
         self.calculate_monthly_payment()
+        if self.payment_type == 'band' and not self.reservation_deadline:
+            self.reservation_deadline = timezone.now() + timedelta(days=7)
         super().save(*args, **kwargs)
-        # Yangi to‘lov yaratilganda boshlang‘ich to‘lovni qayta ishlash
         if self.pk is None and self.initial_payment > 0:
             self.process_payment()
 

@@ -10,15 +10,29 @@ class ObjectAdmin(admin.ModelAdmin):
 
 @admin.register(Apartment)
 class ApartmentAdmin(admin.ModelAdmin):
-    list_display = ('object', 'room_number', 'rooms', 'floor', 'price', 'status', 'reserved_until', 'total_payments', 'balance')
+    list_display = ('object', 'room_number', 'rooms', 'floor', 'price', 'status', 'reserved_until', 'total_payments', 'balance', 'total_overdue')
     list_filter = ('status', 'object', 'rooms', 'floor')
     search_fields = ('object__name', 'room_number')
-    actions = ['add_balance']
+    actions = ['add_balance', 'check_overdue_payments']
+
+    def total_overdue(self, obj):
+        return obj.get_overdue_payments()['total_overdue']
+    total_overdue.short_description = "Muddati o‘tgan summa"
 
     def add_balance(self, request, queryset):
         for apartment in queryset:
-            apartment.add_balance(1000000)  # Masalan, 1 million so‘m qo‘shish
+            apartment.add_balance(1000000)
         self.message_user(request, "Tanlangan xonadonlarga balans qo‘shildi!")
+
+    def check_overdue_payments(self, request, queryset):
+        for apartment in queryset:
+            overdue_data = apartment.get_overdue_payments()
+            if overdue_data['overdue_payments']:
+                self.message_user(
+                    request,
+                    f"{apartment} uchun {len(overdue_data['overdue_payments'])} ta muddati o‘tgan to‘lov topildi, jami: {overdue_data['total_overdue']} so‘m!"
+                )
+        self.message_user(request, "Muddati o‘tgan to‘lovlar tekshirildi!")
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
@@ -50,20 +64,39 @@ class ExpenseAdmin(admin.ModelAdmin):
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ('user', 'apartment', 'payment_type', 'total_amount', 'initial_payment', 'monthly_payment', 'due_date', 'paid_amount', 'status', 'created_at', 'reservation_deadline', 'bank_name')
-    list_filter = ('payment_type', 'status', 'created_at')
+    list_display = (
+        'user', 'apartment', 'payment_type', 'total_amount', 'initial_payment',
+        'monthly_payment', 'due_date', 'paid_amount', 'status', 'created_at',
+        'payment_date', 'reservation_deadline', 'bank_name', 'total_overdue'
+    )
+    list_filter = ('payment_type', 'status', 'created_at', 'payment_date')
     search_fields = ('user__fio', 'apartment__room_number')
-    actions = ['process_payment']
+    actions = ['process_payment', 'check_overdue_payments']
+
+    def total_overdue(self, obj):
+        return obj.get_overdue_payments()['total_overdue']
+    total_overdue.short_description = "Muddati o‘tgan summa"
 
     def process_payment(self, request, queryset):
         for payment in queryset:
-            payment.process_payment(amount=1000000)  # Masalan, 1 million so‘m qo‘shish
+            payment.process_payment(amount=1000000)
         self.message_user(request, "Tanlangan to‘lovlar qayta ishlandi!")
+
+    def check_overdue_payments(self, request, queryset):
+        for payment in queryset:
+            payment.update_status()
+            overdue_data = payment.get_overdue_payments()
+            if overdue_data['overdue_payments']:
+                self.message_user(
+                    request,
+                    f"{payment.user.fio} uchun {len(overdue_data['overdue_payments'])} ta muddati o‘tgan to‘lov topildi, jami: {overdue_data['total_overdue']} so‘m!"
+                )
+        self.message_user(request, "Muddati o‘tgan to‘lovlar tekshirildi!")
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        today = timezone.now().day
-        overdue = qs.filter(due_date__lt=today, status='pending')
+        today = timezone.now()
+        overdue = qs.filter(status='pending')
         for payment in overdue:
             payment.update_status()
         return qs

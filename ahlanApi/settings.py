@@ -22,7 +22,12 @@ INSTALLED_APPS = [
     'corsheaders',
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
-    'all'
+    'django_crontab',
+    'django_apscheduler',
+    'all',
+]
+CRONJOBS = [
+    ('0 0 * * *', 'all.cron.update_overdue_payments'),
 ]
 
 MIDDLEWARE = [

@@ -8,14 +8,18 @@ class ObjectSerializer(serializers.ModelSerializer):
 
 class ApartmentSerializer(serializers.ModelSerializer):
     object_name = serializers.CharField(source='object.name', read_only=True)
+    overdue_payments = serializers.SerializerMethodField()
 
     class Meta:
         model = Apartment
         fields = [
             'id', 'object', 'object_name', 'room_number', 'rooms', 'area', 'floor',
             'price', 'status', 'description', 'secret_code', 'reserved_until',
-            'reservation_amount', 'total_payments', 'balance'
+            'reservation_amount', 'total_payments', 'balance', 'overdue_payments'
         ]
+
+    def get_overdue_payments(self, obj):
+        return obj.get_overdue_payments()
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -78,15 +82,19 @@ class PaymentSerializer(serializers.ModelSerializer):
     user_fio = serializers.CharField(source='user.fio', read_only=True)
     apartment_info = serializers.CharField(source='apartment.__str__', read_only=True)
     documents = DocumentSerializer(many=True, read_only=True)
+    overdue_payments = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
         fields = [
             'id', 'user', 'user_fio', 'apartment', 'apartment_info', 'payment_type', 'total_amount',
             'initial_payment', 'interest_rate', 'duration_months', 'monthly_payment', 'due_date',
-            'paid_amount', 'status', 'additional_info', 'created_at', 'documents', 'reservation_deadline',
-            'bank_name'
+            'paid_amount', 'status', 'additional_info', 'created_at', 'payment_date',
+            'reservation_deadline', 'bank_name', 'documents', 'overdue_payments'
         ]
+
+    def get_overdue_payments(self, obj):
+        return obj.get_overdue_payments()
 
 class UserPaymentSerializer(serializers.ModelSerializer):
     user_fio = serializers.CharField(source='user.fio', read_only=True)
