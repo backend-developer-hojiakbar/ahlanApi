@@ -1,6 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from django_apscheduler.jobstores import DjangoJobStore
 from all.cron import update_overdue_payments
+from django.utils import timezone
 
 def start():
     scheduler = BackgroundScheduler()

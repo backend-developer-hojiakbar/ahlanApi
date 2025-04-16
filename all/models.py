@@ -77,10 +77,11 @@ class Apartment(models.Model):
         overdue_payments = []
         total_overdue = Decimal('0')
         for payment in self.payments.filter(payment_type='muddatli', status__in=['pending', 'overdue']):
-            overdue = payment.get_overdue_payments()
-            overdue_payments.extend(overdue)
-            for item in overdue:
-                total_overdue += item['amount']
+            overdue_data = payment.get_overdue_payments()
+            # overdue_data-ning to‘g‘ri formatda ekanligini tekshirish
+            if isinstance(overdue_data, dict) and 'overdue_payments' in overdue_data:
+                overdue_payments.extend(overdue_data['overdue_payments'])
+                total_overdue += Decimal(str(overdue_data.get('total_overdue', 0)))
         return {
             'overdue_payments': overdue_payments,
             'total_overdue': total_overdue
