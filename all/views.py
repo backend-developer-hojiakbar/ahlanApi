@@ -18,6 +18,7 @@ from datetime import datetime
 from decimal import Decimal
 from docx import Document as DocxDocument
 from django.utils import timezone
+from django.utils import timezone
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -194,25 +195,39 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return [permissions.IsAdminUser()]
         return [permissions.IsAuthenticated()]
 
-    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAdminUser])
+    @action(detail=True, methods=['post'])
     def process_payment(self, request, pk=None):
         payment = self.get_object()
-        amount = request.data.get('amount', None)
-        payment_date = request.data.get('payment_date', None)
+        amount = Decimal(request.data.get('amount', 0))
+        payment_date = request.data.get('payment_date')
+
+        if amount <= 0:
+            return Response({'error': 'Summa musbat bo‘lishi kerak'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
+            # Sana formatini tekshirish va o‘zgartirish
             if payment_date:
                 payment.payment_date = timezone.make_aware(datetime.strptime(payment_date, '%Y-%m-%d'))
-            payment.process_payment(amount=float(amount) if amount else None)
+            payment.paid_amount += amount
             payment.update_status()
-            return Response({
-                'message': f"To‘lov muvaffaqiyatli qayta ishlandi",
-                'payment_status': payment.status,
-                'apartment_status': payment.apartment.status,
-                'apartment_balance': payment.apartment.balance,
-                'overdue_payments': payment.get_overdue_payments()
-            })
+            payment.save()
+
+            # Xonadon balansini yangilash
+            apartment = payment.apartment
+            apartment.update_balance()
+            apartment.update_status()
+
+            # Javob tayyorlash
+            serializer = self.get_serializer(payment)
+            response_data = serializer.data
+            response_data['message'] = 'To‘lov muvaffaqiyatli qayta ishlandi'
+            response_data['apartment_status'] = apartment.status
+            response_data['apartment_balance'] = apartment.balance
+            response_data['overdue_payments'] = apartment.get_overdue_payments()
+
+            return Response(response_data, status=status.HTTP_200_OK)
         except ValueError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'Sana formati noto‘g‘ri: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def get_overdue_payments(self, request, pk=None):

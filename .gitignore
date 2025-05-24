@@ -1,21 +1,131 @@
+# --- Python ---
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+test-results/
+
+# Translations
+*.mo
+# *.pot # .pot fayllari ba'zan commit qilinadi, shuning uchun ixtiyoriy
+# *.po # .po fayllari ba'zan commit qilinadi, shuning uchun ixtiyoriy
+
+# --- Django ---
+# Log fayllari
+*.log
+nohup.out
+
 # SQLite ma'lumotlar bazasi
 *.sqlite
 *.sqlite3
 *.db
+db.sqlite3-journal # SQLite jurnal fayli
 
-# Python fayllari
-*.pyc
-__pycache__/
-*.pyo
-*.pyd
+# Lokal sozlamalar fayli (agar ishlatsangiz)
+local_settings.py
+settings_local.py
 
-# Muhit fayllari
-.env
 
-# IDE va muharrir fayllari
+
+# VS Code
 .vscode/
-.idea/
-*.swp
 
-# Log fayllari
-*.log
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Atom
+.atom/
+
+# Eclipse
+.project
+.pydevproject
+.settings/
+
+# NetBeans
+nbproject/
+
+# Vim
+*.sw[pon]
+*~
+*.bak
+
+# --- Operatsion tizimga xos fayllar ---
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db # Windows thumbnail cache
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Linux
+.directory
+
+# --- Boshqa ---
+# Jupyter Notebook checkpoint fayllari
+.ipynb_checkpoints
+
+# SASS cache
+.sass-cache/
+
+# Mypy cache
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# pytest cache
+.pytest_cache/

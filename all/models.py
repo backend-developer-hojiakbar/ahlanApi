@@ -70,15 +70,37 @@ class Apartment(models.Model):
             self.reservation_amount = None
             self.save()
 
+    def update_balance(self):
+        """
+        Xonadon balansini yangilaydi: barcha to‘lovlarning paid_amount summasini hisoblaydi.
+        """
+        total_paid = Decimal('0')
+        for payment in self.payments.all():
+            total_paid += payment.paid_amount or Decimal('0')
+        self.balance = total_paid
+        self.save()
+
+    def update_status(self):
+        """
+        Xonadon statusini yangilaydi: balans va muddati o‘tgan to‘lovlarga qarab.
+        """
+        overdue_data = self.get_overdue_payments()
+        if overdue_data['total_overdue'] > 0:
+            self.status = 'overdue'
+        elif self.balance >= self.price:
+            self.status = 'paid'
+        else:
+            self.status = 'pending'
+        self.save()
+
     def get_overdue_payments(self):
         """
-        Xonadon uchun muddati o‘tgan to‘lovlarni va umumiy summasini qaytaradi.
+        Muddati o‘tgan to‘lovlarni qaytaradi.
         """
         overdue_payments = []
         total_overdue = Decimal('0')
         for payment in self.payments.filter(payment_type='muddatli', status__in=['pending', 'overdue']):
             overdue_data = payment.get_overdue_payments()
-            # overdue_data-ning to‘g‘ri formatda ekanligini tekshirish
             if isinstance(overdue_data, dict) and 'overdue_payments' in overdue_data:
                 overdue_payments.extend(overdue_data['overdue_payments'])
                 total_overdue += Decimal(str(overdue_data.get('total_overdue', 0)))
